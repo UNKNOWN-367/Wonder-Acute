@@ -1,3 +1,21 @@
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
+# Tạo một web server giả lập để Render Web Service không bị tắt
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    server.serve_forever()
+
+# Chạy web server ở luồng ngầm song song với bot Discord
+threading.Thread(target=run_web_server, daemon=True).start()
 import random
 import datetime
 import discord
@@ -430,3 +448,4 @@ async def duel(ctx, arg: str = None):
 BOT_TOKEN = 'MTU2NDkxODM1NTk4MTUwODYxOA.G0kG6K.HFKaN862WnvH-BLfjRMjtrPxR7f4HIDt1xxIIY'
 bot.run(BOT_TOKEN)
 MONGO_URI = "mongodb+srv://vovietquang08052008_db_user:<Srq424210G3XHOBP>@unknown.an0d3ez.mongodb.net/"
+
