@@ -1,4 +1,50 @@
 import os
+from threading import Thread
+import discord
+from discord.ext import commands
+from flask import Flask
+
+# --- ĐOẠN CODE FLASK ĐỂ GIỮ BOT SỐNG ---
+app = Flask("")
+
+
+@app.route("/")
+def home():
+    return "Bot is alive!"
+
+
+def run_web():
+    # Render sẽ cấp một cổng (Port) tự động qua biến môi trường, mặc định là 8080
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
+
+
+# --- CODE BOT DISCORD CỦA BẠN ---
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+@bot.event
+async def on_ready():
+    print(f"Đã đăng nhập thành công bot: {bot.user}")
+
+
+# (Các lệnh commands hoặc event khác của bạn ghi ở đây...)
+
+# Kích hoạt server web trước khi chạy bot
+keep_alive()
+
+# Chạy bot bằng Token của bạn
+# Khuyên dùng: Đọc token từ biến môi trường để bảo mật
+TOKEN = os.environ.get("DISCORD_TOKEN")
+bot.run(TOKEN)
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 
