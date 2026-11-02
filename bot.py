@@ -430,4 +430,3 @@ async def duel(ctx, arg: str = None):
 BOT_TOKEN = 'MTU2NDkxODM1NTk4MTUwODYxOA.G0kG6K.HFKaN862WnvH-BLfjRMjtrPxR7f4HIDt1xxIIY'
 bot.run(BOT_TOKEN)
 MONGO_URI = "mongodb+srv://vovietquang08052008_db_user:<Srq424210G3XHOBP>@unknown.an0d3ez.mongodb.net/"
-
