@@ -445,5 +445,5 @@ async def duel(ctx, arg: str = None):
 
 
 # ==================== PHẦN 3: CHẠY BOT ====================
-BOT_TOKEN = 'MTU2NDkxODM1NTk4MTUwODYxOA.GaQp_5.1l8I_a4QouBiwFnr1VhTxMYnPHWr215Y59eLHo'
+BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 bot.run(BOT_TOKEN)
