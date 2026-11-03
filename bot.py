@@ -7,159 +7,18 @@ import discord
 from discord.ext import commands
 import pymongo
 
-# ==================== PHẦN 1: FLASK WEB SERVER (GIỮ BOT SỐNG TRÊN RENDER) ====================
+# ==================== PHẦN 1: WEB SERVER GIẢ LẬP (GIỮ RENDER SỐNG 24/7) ====================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Ensure Economy is running 24/7!"
+    return "Ensure Economy Bot is running 24/7!"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# Chạy web server bằng Thread ngầm ngay lập tức
-threading.Thread(target=run_web_server, daemon=True).start()
-
-
-# ==================== PHẦN 2: CẤU HÌNH BOT & MONGODB ATLAS ====================
-intents = discord.Intents.default()
-intents.message_content = True
-
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
-
-# Chuỗi kết nối MongoDB Atlas của bạn
-MONGO_URI = "mongodb+srv://vovietquang08052008_db_user:Srq424210G3XHOBP@unknown.an0d3ez.mongodb.net/"  
-
-mongo_client = pymongo.MongoClient(MONGO_URI)
-db = mongo_client["ensure_bot_db"]
-
-db_users = db["users"]          
-db_cooldowns = db["cooldowns"]  
-db_robbery = db["robbery"]      
-db_disabled = db["disabled"]    
-
-
-def get_user(user_id):
-    user = db_users.find_one({"_id": user_id})
-    if not user:
-        user = {"_id": user_id, "balance": 0, "joined": False}
-        db_users.insert_one(user)
-    return user
-
-def get_balance(user_id):
-    user = get_user(user_id)
-    return user.get("balance", 0)
-
-def update_balance(user_id, amount):
-    user = get_user(user_id)
-    new_bal = user.get("balance", 0) + amount
-    db_users.update_one({"_id": user_id}, {"$set": {"balance": new_bal}})
-    return new_bal
-
-
-@bot.event
-async def on_ready():
-    print(f'Đã đăng nhập thành công với tên: {bot.user}')
-    print('Bot hệ thống Kinh tế Ensure & MongoDB đã sẵn sàng!')
-
-
-# --- CÁC LỆNH CỦA BOT ---
-@bot.command(name='help')
-async def help_command(ctx):
-    help_text = (
-        "📜 **DANH SÁCH CÁC LỆNH HỆ THỐNG ENSURE** 📜\n\n"
-        "• `!join`: Nhận vốn khởi nghiệp từ 100 đến 500 chai ensure.\n"
-        "• `!storage` (hoặc `!balance`, `!vi`): Kiểm tra số lượng chai ensure trong kho.\n"
-        "• `!work`: Đi làm kiếm từ 1 đến 50 chai ensure (Cooldown 1 giờ).\n"
-        "• `!pay @user số_lượng`: Chuyển tối đa 5000 chai ensure cho người khác.\n"
-        "• `!rob` (hoặc `!rob @user`): Cướp ensure của người khác.\n"
-        "• `!defend`: Nạn nhân tự trả thù vụ cướp trong vòng 3 giờ đầu.\n"
-        "• `!defendfor @user`: Cứu bồ khi defend hụt.\n"
-        "• `!duel <level>`: Chơi Russian Roulette cược ensure từ 1 đến 10.\n"
-        "• `!duel info`: Xem thông tin chi tiết các level Duel."
-    )
-    await ctx.send(help_text)
-
-@bot.command(name='join')
-async def join_game(ctx):
-    user_id = ctx.author.id
-    user = get_user(user_id)
-    if user.get("joined", False):
-        await ctx.send(f"⚠️ {ctx.author.mention}, bạn đã nhận vốn khởi nghiệp từ trước rồi!")
-        return
-    starting_money = random.randint(100, 500)
-    update_balance(user_id, starting_money)
-    db_users.update_one({"_id": user_id}, {"$set": {"joined": True}})
-    await ctx.send(f"🎁 Chúc mừng {ctx.author.mention} đã nhận được **{starting_money} chai ensure**!")
-
-@bot.command(name='storage', aliases=['balance', 'sodu', 'vi'])
-async def storage(ctx):
-    bal = get_balance(ctx.author.id)
-    await ctx.send(f"📦 {ctx.author.mention}, kho của bạn có: **{bal} chai ensure**.")
-
-@bot.command(name='work')
-async def work(ctx):
-    user_id = ctx.author.id
-    now = datetime.datetime.now()
-    cd_doc = db_cooldowns.find_one({"_id": user_id})
-    if cd_doc and "last_work" in cd_doc:
-        elapsed = (now - cd_doc["last_work"]).total_seconds()
-        if elapsed < 3600:
-            remaining = int(3600 - elapsed)
-            await ctx.send(f"⏳ Bạn cần nghỉ ngơi thêm **{remaining // 60} phút** nữa mới được `!work` tiếp.")
-            return
-    earned = random.randint(1, 50)
-    new_bal = update_balance(user_id, earned)
-    db_cooldowns.update_one({"_id": user_id}, {"$set": {"last_work": now}}, upsert=True)
-    await ctx.send(f"💼 {ctx.author.mention} kiếm được **{earned} chai ensure**! *(Tổng kho: {new_bal})*")
-
-@bot.command(name='pay')
-async def pay_money(ctx, member: discord.Member, amount: int):
-    sender_id = ctx.author.id
-    receiver_id = member.id
-    if sender_id == receiver_id or amount <= 0 or amount > 5000:
-        await ctx.send("⚠️ Giao dịch không hợp lệ hoặc vượt quá 5000 chai!")
-        return
-    if get_balance(sender_id) < amount:
-        await ctx.send("⚠️ Kho của bạn không đủ ensure để chuyển!")
-        return
-    update_balance(sender_id, -amount)
-    update_balance(receiver_id, amount)
-    await ctx.send(f"💸 Đã chuyển thành công **{amount} chai ensure** cho {member.mention}!")
-
-@bot.command(name='duel')
-async def duel(ctx, arg: str = None):
-    if arg and arg.lower() == 'info':
-        await ctx.send("📊 Sử dụng `!duel <level từ 1-10>` để tham gia trò chơi mạo hiểm!")
-        return
-    await ctx.send(f"⚠️ Tính năng Duel đã sẵn sàng cho {ctx.author.mention}!")
-
-# ==================== PHẦN 3: KHỞI CHẠY BOT ====================
-BOT_TOKEN = 'MTU2NDkxODM1NTk4MTUwODYxOA.G0kG6K.HFKaN862WnvH-BLfjRMjtrPxR7f4HIDt1xxIIY'
-bot.run(BOT_TOKEN)
-import os
-import random
-import datetime
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import discord
-from discord.ext import commands
-import pymongo
-
-# ==================== PHẦN 1: WEB SERVER GIẢ LẬP 24/7 (CHO RENDER) ====================
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running 24/7!")
-
-def run_web_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-    server.serve_forever()
-
-# Khởi chạy web server ngầm để vượt qua cơ chế check Port của Render
+# Khởi chạy web server ngầm trước khi bot chạy
 threading.Thread(target=run_web_server, daemon=True).start()
 
 
@@ -169,7 +28,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# Chuỗi kết nối MongoDB Atlas đã được điền mật khẩu chính xác
+# Chuỗi kết nối MongoDB Atlas của bạn
 MONGO_URI = "mongodb+srv://vovietquang08052008_db_user:Srq424210G3XHOBP@unknown.an0d3ez.mongodb.net/"  
 
 mongo_client = pymongo.MongoClient(MONGO_URI)
@@ -226,7 +85,7 @@ async def help_command(ctx):
     await ctx.send(help_text)
 
 
-# --- LỆNH ĐẶC QUYỀN ẨN CỦA CHỦ SERVER (!forgive) ---
+# --- LỆNH ĐẶC QUYỀN ẨN LẠI CỦA CHỦ SERVER (!forgive) ---
 @bot.command(name='forgive')
 async def forgive(ctx, member: discord.Member):
     if ctx.author.id != ctx.guild.owner_id:
@@ -585,6 +444,6 @@ async def duel(ctx, arg: str = None):
             await ctx.send(f"💥 **[LEVEL {level}] (Tỉ lệ: {hien_thi_ti_le}%)**\nĐOÀNG! {ctx.author.mention} (Admin/Mod) bị **khóa `!duel` trong {hien_thi_tg}**! 💀 *(Kho: {lost_bal} chai)*")
 
 
-# Chạy bot với token của bạn
+# ==================== PHẦN 3: CHẠY BOT ====================
 BOT_TOKEN = 'MTU2NDkxODM1NTk4MTUwODYxOA.G0kG6K.HFKaN862WnvH-BLfjRMjtrPxR7f4HIDt1xxIIY'
 bot.run(BOT_TOKEN)
