@@ -1,81 +1,36 @@
 import os
-from threading import Thread
+import random
+import datetime
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord.ext import commands
-from flask import Flask
+import pymongo
 
-# --- ĐOẠN CODE FLASK ĐỂ GIỮ BOT SỐNG ---
-app = Flask("")
-
-
-@app.route("/")
-def home():
-    return "Bot is alive!"
-
-
-def run_web():
-    # Render sẽ cấp một cổng (Port) tự động qua biến môi trường, mặc định là 8080
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
-
-
-def keep_alive():
-    t = Thread(target=run_web)
-    t.start()
-
-
-# --- CODE BOT DISCORD CỦA BẠN ---
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-
-@bot.event
-async def on_ready():
-    print(f"Đã đăng nhập thành công bot: {bot.user}")
-
-
-# (Các lệnh commands hoặc event khác của bạn ghi ở đây...)
-
-# Kích hoạt server web trước khi chạy bot
-keep_alive()
-
-# Chạy bot bằng Token của bạn
-# Khuyên dùng: Đọc token từ biến môi trường để bảo mật
-TOKEN = os.environ.get("DISCORD_TOKEN")
-bot.run(TOKEN)
-import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
-
-# Tạo một web server giả lập để Render Web Service không bị tắt
+# ==================== PHẦN 1: WEB SERVER GIẢ LẬP 24/7 (CHO RENDER) ====================
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is running!")
+        self.wfile.write(b"Bot is running 24/7!")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), SimpleHandler)
     server.serve_forever()
 
-# Chạy web server ở luồng ngầm song song với bot Discord
+# Khởi chạy web server ngầm để vượt qua cơ chế check Port của Render
 threading.Thread(target=run_web_server, daemon=True).start()
-import random
-import datetime
-import discord
-from discord.ext import commands
-import pymongo
 
+
+# ==================== PHẦN 2: KẾT NỐI MONGODB ATLAS & BOT ====================
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# --- 1. KẾT NỐI MONGODB ATLAS (CƠ SỞ DỮ LIỆU ĐÁM MÂY) ---
-# THAY ĐOẠN LINK DƯỚI BẰNG CONNECTION STRING CỦA BẠN TRÊN MONGODB ATLAS
-MONGO_URI = "YOUR_MONGODB_URI_HERE" 
+# Chuỗi kết nối MongoDB Atlas đã được điền mật khẩu chính xác
+MONGO_URI = "mongodb+srv://vovietquang08052008_db_user:Srq424210G3XHOBP@unknown.an0d3ez.mongodb.net/"  
 
 mongo_client = pymongo.MongoClient(MONGO_URI)
 db = mongo_client["ensure_bot_db"]
@@ -109,7 +64,7 @@ def update_balance(user_id, amount):
 @bot.event
 async def on_ready():
     print(f'Đã đăng nhập thành công với tên: {bot.user}')
-    print('Bot hệ thống Kinh tế Ensure & MongoDB đã sẵn sàng!')
+    print('Bot hệ thống Kinh tế Ensure & MongoDB đã sẵn sàng hoạt động 24/7!')
 
 
 # --- LỆNH !help ---
@@ -131,7 +86,7 @@ async def help_command(ctx):
     await ctx.send(help_text)
 
 
-# --- LỆNH ĐẶC QUYỀN ẨN LẠI CỦA CHỦ SERVER (!forgive) ---
+# --- LỆNH ĐẶC QUYỀN ẨN CỦA CHỦ SERVER (!forgive) ---
 @bot.command(name='forgive')
 async def forgive(ctx, member: discord.Member):
     if ctx.author.id != ctx.guild.owner_id:
@@ -196,7 +151,7 @@ async def work(ctx):
     await ctx.send(f"💼 {ctx.author.mention} đã chăm chỉ làm việc và kiếm được **{earned} chai ensure**! *(Tổng kho: {new_bal} chai)*")
 
 
-# --- 4. LỆNH CHUYỂN TIỀN (!pay) - NÂNG LÊN 5000 ---
+# --- 4. LỆNH CHUYỂN TIỀN (!pay) ---
 @bot.command(name='pay')
 async def pay_money(ctx, member: discord.Member, amount: int):
     sender_id = ctx.author.id
@@ -490,8 +445,6 @@ async def duel(ctx, arg: str = None):
             await ctx.send(f"💥 **[LEVEL {level}] (Tỉ lệ: {hien_thi_ti_le}%)**\nĐOÀNG! {ctx.author.mention} (Admin/Mod) bị **khóa `!duel` trong {hien_thi_tg}**! 💀 *(Kho: {lost_bal} chai)*")
 
 
-# Token thật của bot được tích hợp sẵn
+# Chạy bot với token của bạn
 BOT_TOKEN = 'MTU2NDkxODM1NTk4MTUwODYxOA.G0kG6K.HFKaN862WnvH-BLfjRMjtrPxR7f4HIDt1xxIIY'
 bot.run(BOT_TOKEN)
-MONGO_URI = "mongodb+srv://vovietquang08052008_db_user:<Srq424210G3XHOBP>@unknown.an0d3ez.mongodb.net/"
-
