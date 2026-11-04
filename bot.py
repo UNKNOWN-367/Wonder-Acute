@@ -93,7 +93,9 @@ async def slash_help(interaction: discord.Interaction):
         "• `/defend`: Nạn nhân tự trả thù vụ cướp trong vòng 3 giờ đầu.\n"
         "• `/defendfor`: Cứu bồ khi defend hụt hoặc trong 30 phút tiếp theo.\n"
         "• `/duel`: Chơi Russian Roulette cược ensure theo cấp độ từ 1 đến 10.\n"
-        "• `/duel_info`: Xem bảng thông tin chi tiết các cấp độ Duel."
+        "• `/duel_info`: Xem bảng thông tin chi tiết các cấp độ Duel.\n"
+        "• `/leaderboard`: Xem bảng xếp hạng top những người giàu nhất.\n"
+        "• `/forgive`: Tha lỗi, gỡ lệnh cấm chơi `/duel` cho thành viên (Chỉ Admin)."
     )
     await interaction.response.send_message(help_text)
 
@@ -363,7 +365,7 @@ async def slash_defendfor(interaction: discord.Interaction, member: discord.Memb
         robber_id = record["robber_id"]
 
         robber_bal = get_balance(data, robber_id)
-        loot_amount = model_loot = min(amount, robber_bal)
+        loot_amount = min(amount, robber_bal)
 
         update_balance(data, robber_id, -loot_amount)
         update_balance(data, helper_id, loot_amount)
@@ -458,7 +460,7 @@ async def slash_duel(interaction: discord.Interaction, level: int):
 
         try:
             duration = datetime.timedelta(seconds=mute_sec)
-            await interaction.user.timeout(duration, reason=f"Thua Duel Level Level {level}")
+            await interaction.user.timeout(duration, reason=f"Thua Duel Level {level}")
             lost_bal = get_balance(data, interaction.user.id)
             await interaction.response.send_message(f"💥 **[LEVEL {level}] (Tỉ lệ: {hien_thi_ti_le}%)**\nĐOÀNG! {interaction.user.mention} bị timeout **{hien_thi_tg}**. 💀 *(Kho: {lost_bal} chai)*")
         except Exception:
@@ -470,22 +472,53 @@ async def slash_duel(interaction: discord.Interaction, level: int):
             lost_bal = get_balance(data, interaction.user.id)
             await interaction.response.send_message(f"💥 **[LEVEL {level}] (Tỉ lệ: {hien_thi_ti_le}%)**\nĐOÀNG! {interaction.user.mention} bị **khóa `/duel` trong {hien_thi_tg}**! 💀 *(Kho: {lost_bal} chai)*")
 
-# Lệnh /forgive (Chỉ Chủ bot hoặc Admin mới dùng được)
-@bot.tree.command(name="forgive", description="Tha lỗi, gỡ lệnh cấm chơi /duel cho thành viên (Chỉ Admin/Chủ bot)")
+
+# 11. Lệnh /leaderboard (Bảng xếp hạng top giàu nhất)
+@bot.tree.command(name="leaderboard", description="Xem bảng xếp hạng top những người có nhiều chai ensure nhất")
+async def slash_leaderboard(interaction: discord.Interaction):
+    data = load_data()
+    users_data = data.get("users", {})
+
+    if not users_data:
+        await interaction.response.send_message("📊 Bảng xếp hạng hiện tại đang trống!", ephemeral=True)
+        return
+
+    # Sắp xếp danh sách người dùng theo số dư (balance) giảm dần
+    sorted_users = sorted(users_data.items(), key=lambda x: x[1].get("balance", 0), reverse=True)
+
+    # Lấy top 10 người đứng đầu
+    top_users = sorted_users[:10]
+
+    lb_text = "🏆 **BẢNG XẾP HẠNG ENSURE TOP GIÀU NHẤT** 🏆\n\n"
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+    for index, (uid, info) in enumerate(top_users):
+        medal = medals[index] if index < len(medals) else f"**{index + 1}.**"
+        bal = info.get("balance", 0)
+        lb_text += f"{medal} <@{uid}> — **{bal:,}** chai ensure\n"
+
+    await interaction.response.send_message(lb_text)
+
+
+# 12. Lệnh /forgive (Gỡ lệnh cấm /duel cho thành viên - Chỉ Admin)
+@bot.tree.command(name="forgive", description="Tha lỗi, gỡ lệnh cấm chơi /duel cho thành viên (Chỉ Admin)")
 @app_commands.describe(member="Thành viên cần được gỡ cấm duel")
 async def slash_forgive(interaction: discord.Interaction, member: discord.Member):
-    # Kiểm tra xem người dùng có phải là Chủ server (Owner) hoặc có quyền Administrator hay không
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ Quản trị viên mới có thể tha lỗi.", ephemeral=True)
         return
+
     data = load_data()
     target_id = str(member.id)
+
     if "disabled" in data and target_id in data["disabled"]:
         del data["disabled"][target_id]
         save_data(data)
         await interaction.response.send_message(f"🕊️ **ĐÃ THA LỖI!** {interaction.user.mention} đã gỡ lệnh cấm chơi `/duel` cho {member.mention} thành công!")
     else:
         await interaction.response.send_message(f"⚠️ {member.mention} hiện tại không bị cấm chơi `/duel` nào cả!", ephemeral=True)
+
+
 # ==================== CHẠY BOT ====================
 if __name__ == "__main__":
     BOT_TOKEN = os.getenv("DISCORD_TOKEN")
