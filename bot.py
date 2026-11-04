@@ -478,10 +478,8 @@ async def slash_forgive(interaction: discord.Interaction, member: discord.Member
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ Quản trị viên mới có thể tha lỗi.", ephemeral=True)
         return
-
     data = load_data()
     target_id = str(member.id)
-
     if "disabled" in data and target_id in data["disabled"]:
         del data["disabled"][target_id]
         save_data(data)
