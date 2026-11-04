@@ -470,7 +470,24 @@ async def slash_duel(interaction: discord.Interaction, level: int):
             lost_bal = get_balance(data, interaction.user.id)
             await interaction.response.send_message(f"💥 **[LEVEL {level}] (Tỉ lệ: {hien_thi_ti_le}%)**\nĐOÀNG! {interaction.user.mention} bị **khóa `/duel` trong {hien_thi_tg}**! 💀 *(Kho: {lost_bal} chai)*")
 
+# Lệnh /forgive (Chỉ Chủ bot hoặc Admin mới dùng được)
+@bot.tree.command(name="forgive", description="Tha lỗi, gỡ lệnh cấm chơi /duel cho thành viên (Chỉ Admin/Chủ bot)")
+@app_commands.describe(member="Thành viên cần được gỡ cấm duel")
+async def slash_forgive(interaction: discord.Interaction, member: discord.Member):
+    # Kiểm tra xem người dùng có phải là Chủ server (Owner) hoặc có quyền Administrator hay không
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ Quản trị viên mới có thể tha lỗi.", ephemeral=True)
+        return
 
+    data = load_data()
+    target_id = str(member.id)
+
+    if "disabled" in data and target_id in data["disabled"]:
+        del data["disabled"][target_id]
+        save_data(data)
+        await interaction.response.send_message(f"🕊️ **ĐÃ THA LỖI!** {interaction.user.mention} đã gỡ lệnh cấm chơi `/duel` cho {member.mention} thành công!")
+    else:
+        await interaction.response.send_message(f"⚠️ {member.mention} hiện tại không bị cấm chơi `/duel` nào cả!", ephemeral=True)
 # ==================== CHẠY BOT ====================
 if __name__ == "__main__":
     BOT_TOKEN = os.getenv("DISCORD_TOKEN")
