@@ -28,10 +28,17 @@ DATA_FILE = "ensure_data.json"
 
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {"users": {}, "cooldowns": {}, "robbery": {}, "disabled": {}}
+        default_data = {"users": {}, "cooldowns": {}, "robbery": {}, "disabled": {}}
+        save_data(default_data)
+        return default_data
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            if "users" not in data: data["users"] = {}
+            if "cooldowns" not in data: data["cooldowns"] = {}
+            if "robbery" not in data: data["robbery"] = {}
+            if "disabled" not in data: data["disabled"] = {}
+            return data
     except Exception:
         return {"users": {}, "cooldowns": {}, "robbery": {}, "disabled": {}}
 
@@ -94,8 +101,8 @@ async def slash_help(interaction: discord.Interaction):
         "• `/defendfor`: Cứu bồ khi defend hụt hoặc trong 30 phút tiếp theo.\n"
         "• `/duel`: Chơi Russian Roulette cược ensure theo cấp độ từ 1 đến 10.\n"
         "• `/duel_info`: Xem bảng thông tin chi tiết các cấp độ Duel.\n"
-        "• `/leaderboard`: Xem bảng xếp hạng top những người giàu nhất.\n"
-        "• `/give`: Phát ensure cho thành viên (Chỉ Server Owner hoặc Bot Owner).\n"
+        "• `/leaderboard`: Xem bảng xếp hạng top những người giàu nhất (Không ping).\n"
+        "• `/give`: Phát ensure cho thành viên (Chỉ Server Owner).\n"
         "• `/forgive`: Gỡ lệnh cấm chơi `/duel` cho thành viên (Chỉ Admin)."
     )
     await interaction.response.send_message(help_text)
@@ -474,7 +481,7 @@ async def slash_duel(interaction: discord.Interaction, level: int):
             await interaction.response.send_message(f"💥 **[LEVEL {level}] (Tỉ lệ: {hien_thi_ti_le}%)**\nĐOÀNG! {interaction.user.mention} bị **khóa `/duel` trong {hien_thi_tg}**! 💀 *(Kho: {lost_bal} chai)*")
 
 
-# 11. Lệnh /leaderboard (Bảng xếp hạng top giàu nhất)
+# 11. Lệnh /leaderboard (Bảng xếp hạng top giàu nhất - Không ping)
 @bot.tree.command(name="leaderboard", description="Xem bảng xếp hạng top những người có nhiều chai ensure nhất")
 async def slash_leaderboard(interaction: discord.Interaction):
     data = load_data()
@@ -493,23 +500,26 @@ async def slash_leaderboard(interaction: discord.Interaction):
     for index, (uid, info) in enumerate(top_users):
         medal = medals[index] if index < len(medals) else f"**{index + 1}.**"
         bal = info.get("balance", 0)
-        lb_text += f"{medal} <@{uid}> — **{bal:,}** chai ensure\n"
+        
+        member = interaction.guild.get_member(int(uid))
+        if member:
+            name = member.display_name
+        else:
+            name = f"User {uid}"
+
+        lb_text += f"{medal} **{name}** — **{bal:,}** chai ensure\n"
 
     await interaction.response.send_message(lb_text)
 
 
-# 12. Lệnh /give (Phát ensure cho thành viên - Chỉ Server Owner hoặc Bot Owner)
-@bot.tree.command(name="give", description="Phát ensure cho thành viên (Chỉ Server Owner hoặc Bot Owner)")
+# 12. Lệnh /give (Phát ensure cho thành viên - Chỉ Server Owner)
+@bot.tree.command(name="give", description="Phát ensure cho thành viên (Chỉ Server Owner)")
 @app_commands.describe(member="Thành viên nhận ensure", amount="Số lượng chai ensure cần phát")
 async def slash_give(interaction: discord.Interaction, member: discord.Member, amount: int):
-    # Thay thế chuỗi số bên dưới bằng ID Discord thật của bạn (Bot Owner) nếu muốn chắc chắn tài khoản của bạn luôn dùng được ở mọi server
-    BOT_OWNER_ID = 0  # Ví dụ: 123456789012345678 (nếu không cần thì để 0)
-
     is_server_owner = interaction.guild and interaction.guild.owner_id == interaction.user.id
-    is_bot_owner = interaction.user.id == BOT_OWNER_ID
 
-    if not (is_server_owner or is_bot_owner):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ **Chủ Server** hoặc **Chủ Bot** mới có thể phát ensure.", ephemeral=True)
+    if not is_server_owner:
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ **Chủ Server** mới có thể phát ensure.", ephemeral=True)
         return
 
     if amount <= 0:
@@ -525,7 +535,7 @@ async def slash_give(interaction: discord.Interaction, member: discord.Member, a
 # 13. Lệnh /forgive (Gỡ lệnh cấm /duel cho thành viên - Chỉ Admin)
 @bot.tree.command(name="forgive", description="Tha lỗi, gỡ lệnh cấm chơi /duel cho thành viên (Chỉ Admin)")
 @app_commands.describe(member="Thành viên cần được gỡ cấm duel")
-async def slash_give_forgive(interaction: discord.Interaction, member: discord.Member):
+async def slash_forgive(interaction: discord.Interaction, member: discord.Member):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ Quản trị viên mới có thể tha lỗi.", ephemeral=True)
         return
