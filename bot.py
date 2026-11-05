@@ -68,6 +68,7 @@ def update_balance(data, user_id, amount):
 # ==================== PHẦN 3: KHỞI TẠO BOT & SLASH COMMANDS ====================
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True  # Bật intent quản lý thành viên để lấy tên hiển thị chuẩn xác
 
 class EnsureBot(commands.Bot):
     def __init__(self):
@@ -95,14 +96,14 @@ async def slash_help(interaction: discord.Interaction):
         "• `/join`: Nhận vốn khởi nghiệp từ 100 đến 500 chai ensure.\n"
         "• `/storage`: Kiểm tra số lượng chai ensure trong kho.\n"
         "• `/work`: Đi làm kiếm từ 1 đến 50 chai ensure (Cooldown 1 giờ).\n"
-        "• `/pay`: Chuyển tối đa 5000 chai ensure cho người khác.\n"
-        "• `/rob`: Cướp ensure của người khác (Cooldown 1 giờ, cướp hụt bị timeout 1 phút).\n"
+        "• `/pay`: Chuyển tối đa 5000 chai ensure cho người khác (Hỗ trợ tag tên hoặc nhập ID).\n"
+        "• `/rob`: Cướp ensure của người khác (Hỗ trợ tag tên hoặc nhập ID).\n"
         "• `/defend`: Nạn nhân tự trả thù vụ cướp trong vòng 3 giờ đầu.\n"
         "• `/defendfor`: Cứu bồ khi defend hụt hoặc trong 30 phút tiếp theo.\n"
         "• `/duel`: Chơi Russian Roulette cược ensure theo cấp độ từ 1 đến 10.\n"
         "• `/duel_info`: Xem bảng thông tin chi tiết các cấp độ Duel.\n"
-        "• `/leaderboard`: Xem bảng xếp hạng top những người giàu nhất (Không ping).\n"
-        "• `/give`: Phát ensure cho thành viên (Chỉ Server Owner).\n"
+        "• `/leaderboard`: Xem bảng xếp hạng top những người giàu nhất (Hiện tên, không ping).\n"
+        "• `/give`: Phát ensure cho thành viên (Hỗ trợ tag tên hoặc nhập ID - Chỉ Server Owner).\n"
         "• `/forgive`: Gỡ lệnh cấm chơi `/duel` cho thành viên (Chỉ Admin)."
     )
     await interaction.response.send_message(help_text)
@@ -166,13 +167,20 @@ async def slash_work(interaction: discord.Interaction):
     await interaction.response.send_message(f"💼 {interaction.user.mention} đã chăm chỉ làm việc và kiếm được **{earned} chai ensure**! *(Tổng kho: {new_bal} chai)*")
 
 
-# 5. Lệnh /pay (Chuyển tiền)
+# 5. Lệnh /pay (Chuyển tiền - Hỗ trợ cả tag tên lẫn nhập ID)
 @bot.tree.command(name="pay", description="Chuyển chai ensure cho thành viên khác (Tối đa 5000)")
-@app_commands.describe(member="Người nhận ensure", amount="Số lượng chai ensure cần chuyển")
-async def slash_pay(interaction: discord.Interaction, member: discord.Member, amount: int):
+@app_commands.describe(target="Tag tên hoặc nhập ID Discord người nhận", amount="Số lượng chai ensure cần chuyển")
+async def slash_pay(interaction: discord.Interaction, target: str, amount: int):
     data = load_data()
     sender_id = interaction.user.id
-    receiver_id = member.id
+
+    # Xử lý chuỗi target để hỗ trợ cả dạng tag (<@ID> hoặc <@!ID>) lẫn dạng nhập ID thuần túy
+    clean_id_str = target.replace("<@", "").replace(">", "").replace("!", "")
+    if not clean_id_str.isdigit():
+        await interaction.response.send_message("⚠️ Thành viên không hợp lệ! Vui lòng tag đúng người hoặc nhập đúng ID Discord.", ephemeral=True)
+        return
+    
+    receiver_id = int(clean_id_str)
 
     if sender_id == receiver_id:
         await interaction.response.send_message("⚠️ Bạn không thể tự chuyển cho chính mình được!", ephemeral=True)
@@ -187,16 +195,20 @@ async def slash_pay(interaction: discord.Interaction, member: discord.Member, am
         await interaction.response.send_message("⚠️ Kho của bạn không đủ ensure để thực hiện giao dịch này!", ephemeral=True)
         return
 
+    # Lấy tên hiển thị của người nhận nếu có trong server
+    receiver_member = interaction.guild.get_member(receiver_id)
+    receiver_name = receiver_member.display_name if receiver_member else f"User {receiver_id}"
+
     update_balance(data, sender_id, -amount)
     update_balance(data, receiver_id, amount)
 
-    await interaction.response.send_message(f"💸 {interaction.user.mention} đã chuyển thành công **{amount} chai ensure** cho {member.mention}!")
+    await interaction.response.send_message(f"💸 {interaction.user.mention} đã chuyển thành công **{amount} chai ensure** cho **{receiver_name}**!")
 
 
-# 6. Lệnh /rob (Cướp bóc)
+# 6. Lệnh /rob (Cướp bóc - Hỗ trợ tag tên hoặc nhập ID)
 @bot.tree.command(name="rob", description="Cướp ensure của người khác")
-@app_commands.describe(member="Mục tiêu muốn cướp (để trống để cướp ngẫu nhiên)")
-async def slash_rob(interaction: discord.Interaction, member: discord.Member = None):
+@app_commands.describe(target="Tag tên hoặc nhập ID mục tiêu (để trống để cướp ngẫu nhiên)")
+async def slash_rob(interaction: discord.Interaction, target: str = None):
     data = load_data()
     robber_id = str(interaction.user.id)
     now = datetime.datetime.now()
@@ -220,8 +232,13 @@ async def slash_rob(interaction: discord.Interaction, member: discord.Member = N
             await interaction.response.send_message(f"⏳ Bạn vừa mới đi cướp về! Hãy đợi thêm **{mins_r} phút {secs_r} giây** nữa.", ephemeral=True)
             return
 
-    if member is not None:
-        victim_id = member.id
+    if target is not None:
+        clean_id_str = target.replace("<@", "").replace(">", "").replace("!", "")
+        if not clean_id_str.isdigit():
+            await interaction.response.send_message("⚠️ Mục tiêu không hợp lệ! Vui lòng tag đúng người hoặc nhập đúng ID Discord.", ephemeral=True)
+            return
+        victim_id = int(clean_id_str)
+
         if victim_id == interaction.user.id:
             await interaction.response.send_message("⚠️ Bạn không thể tự cướp kho của chính mình!", ephemeral=True)
             return
@@ -229,14 +246,17 @@ async def slash_rob(interaction: discord.Interaction, member: discord.Member = N
         if not vic_doc.get("joined", False):
             await interaction.response.send_message("⚠️ Mục tiêu bạn muốn cướp chưa từng `/join` khởi nghiệp nên không có gì để cướp!", ephemeral=True)
             return
-        victim_name = member.mention
+        
+        victim_member = interaction.guild.get_member(victim_id)
+        victim_name = f"**{victim_member.display_name}**" if victim_member else f"User {victim_id}"
     else:
         all_joined = [uid for uid, info in data["users"].items() if info.get("joined") and uid != robber_id]
         if not all_joined:
             await interaction.response.send_message("⚠️ Hiện tại không có mục tiêu nào khả dĩ để cướp cả!", ephemeral=True)
             return
         victim_id = int(random.choice(all_joined))
-        victim_name = f"<@{victim_id}>"
+        victim_member = interaction.guild.get_member(victim_id)
+        victim_name = f"**{victim_member.display_name}**" if victim_member else f"User {victim_id}"
 
     is_failed = random.random() < 0.40
     data["cooldowns"][robber_id] = data["cooldowns"].get(robber_id, {})
@@ -277,7 +297,7 @@ async def slash_rob(interaction: discord.Interaction, member: discord.Member = N
 
         await interaction.response.send_message(
             f"🥷 **CƯỚP THÀNH CÔNG!** {interaction.user.mention} đã cướp được **{actual_stolen} chai ensure** từ {victim_name}!\n"
-            f"⏳ *{victim_name} có **3 giờ** để dùng lệnh `/defend` trả thù đòi lại.*"
+            f"⏳ *Nạn nhân có **3 giờ** để dùng lệnh `/defend` trả thù đòi lại.*"
         )
 
 
@@ -308,6 +328,9 @@ async def slash_defend(interaction: discord.Interaction):
     amount = record["amount"]
     is_success = random.random() < 0.50
 
+    robber_member = interaction.guild.get_member(int(robber_id))
+    robber_name = f"**{robber_member.display_name}**" if robber_member else f"User {robber_id}"
+
     if is_success:
         record["defended"] = True
         save_data(data)
@@ -318,7 +341,7 @@ async def slash_defend(interaction: discord.Interaction):
         update_balance(data, robber_id, -refund_amount)
         update_balance(data, interaction.user.id, refund_amount)
 
-        await interaction.response.send_message(f"⚔️ **PHỤC THÙ THÀNH CÔNG!** {interaction.user.mention} đã đánh bại tên cướp <@{robber_id}> và đòi lại **{refund_amount} chai ensure**!")
+        await interaction.response.send_message(f"⚔️ **PHỤC THÙ THÀNH CÔNG!** {interaction.user.mention} đã đánh bại tên cướp {robber_name} và đòi lại **{refund_amount} chai ensure**!")
     else:
         record["defend_failed"] = True
         save_data(data)
@@ -327,11 +350,17 @@ async def slash_defend(interaction: discord.Interaction):
 
 # 8. Lệnh /defendfor (Cứu bồ)
 @bot.tree.command(name="defendfor", description="Cứu bồ / ăn hôi khi defend hụt hoặc trong 30 phút tiếp theo")
-@app_commands.describe(member="Thành viên cần cứu giúp")
-async def slash_defendfor(interaction: discord.Interaction, member: discord.Member):
+@app_commands.describe(target="Tag tên hoặc nhập ID thành viên cần cứu giúp")
+async def slash_defendfor(interaction: discord.Interaction, target: str):
     data = load_data()
     helper_id = interaction.user.id
-    victim_id = str(member.id)
+
+    clean_id_str = target.replace("<@", "").replace(">", "").replace("!", "")
+    if not clean_id_str.isdigit():
+        await interaction.response.send_message("⚠️ Thành viên không hợp lệ! Vui lòng tag đúng người hoặc nhập đúng ID Discord.", ephemeral=True)
+        return
+    
+    victim_id = clean_id_str
     now = datetime.datetime.now()
 
     robbery_records = data.get("robbery", {})
@@ -349,7 +378,7 @@ async def slash_defendfor(interaction: discord.Interaction, member: discord.Memb
         await interaction.response.send_message("⚠️ Vụ cướp này đã đủ tối đa 3 người cứu giúp tham gia rồi!", ephemeral=True)
         return
 
-    if helper_id == member.id or helper_id == record["robber_id"]:
+    if helper_id == int(victim_id) or helper_id == int(record["robber_id"]):
         await interaction.response.send_message("⚠️ Bạn không thể tự cứu trong vụ việc của chính mình!", ephemeral=True)
         return
 
@@ -366,11 +395,14 @@ async def slash_defendfor(interaction: discord.Interaction, member: discord.Memb
 
     is_success = random.random() < 0.60
 
+    robber_id = record["robber_id"]
+    robber_member = interaction.guild.get_member(int(robber_id))
+    robber_name = f"**{robber_member.display_name}**" if robber_member else f"User {robber_id}"
+
     if is_success:
         helpers.append(helper_id)
         record["helpers"] = helpers
         amount = record["amount"]
-        robber_id = record["robber_id"]
 
         robber_bal = get_balance(data, robber_id)
         loot_amount = min(amount, robber_bal)
@@ -382,7 +414,7 @@ async def slash_defendfor(interaction: discord.Interaction, member: discord.Memb
             record["defended"] = True
         save_data(data)
 
-        await interaction.response.send_message(f"🦸 **CỨU GIÚP THÀNH CÔNG!** {interaction.user.mention} đã trừng trị tên cướp <@{robber_id}> và hốt trọn **{loot_amount} chai ensure**! *(Cứu giúp: {len(helpers)}/3)*")
+        await interaction.response.send_message(f"🦸 **CỨU GIÚP THÀNH CÔNG!** {interaction.user.mention} đã trừng trị tên cướp {robber_name} và hốt trọn **{loot_amount} chai ensure**! *(Cứu giúp: {len(helpers)}/3)*")
     else:
         await interaction.response.send_message(f"💥 {interaction.user.mention} lao vào cứu giúp nhưng bị đánh văng ngược lại, cứu hụt hoàn toàn!")
 
@@ -481,7 +513,7 @@ async def slash_duel(interaction: discord.Interaction, level: int):
             await interaction.response.send_message(f"💥 **[LEVEL {level}] (Tỉ lệ: {hien_thi_ti_le}%)**\nĐOÀNG! {interaction.user.mention} bị **khóa `/duel` trong {hien_thi_tg}**! 💀 *(Kho: {lost_bal} chai)*")
 
 
-# 11. Lệnh /leaderboard (Bảng xếp hạng top giàu nhất - Không ping)
+# 11. Lệnh /leaderboard (Bảng xếp hạng top giàu nhất - Hiện tên, không ping)
 @bot.tree.command(name="leaderboard", description="Xem bảng xếp hạng top những người có nhiều chai ensure nhất")
 async def slash_leaderboard(interaction: discord.Interaction):
     data = load_data()
@@ -512,43 +544,61 @@ async def slash_leaderboard(interaction: discord.Interaction):
     await interaction.response.send_message(lb_text)
 
 
-# 12. Lệnh /give (Phát ensure cho thành viên - Chỉ Server Owner)
+# 12. Lệnh /give (Phát ensure - Hỗ trợ tag tên hoặc nhập ID - Chỉ Server Owner)
 @bot.tree.command(name="give", description="Phát ensure cho thành viên (Chỉ Server Owner)")
-@app_commands.describe(member="Thành viên nhận ensure", amount="Số lượng chai ensure cần phát")
-async def slash_give(interaction: discord.Interaction, member: discord.Member, amount: int):
+@app_commands.describe(target="Tag tên hoặc nhập ID thành viên nhận", amount="Số lượng chai ensure cần phát")
+async def slash_give(interaction: discord.Interaction, target: str, amount: int):
     is_server_owner = interaction.guild and interaction.guild.owner_id == interaction.user.id
 
     if not is_server_owner:
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ **Chủ Server** mới có thể phát ensure.", ephemeral=True)
         return
 
+    clean_id_str = target.replace("<@", "").replace(">", "").replace("!", "")
+    if not clean_id_str.isdigit():
+        await interaction.response.send_message("⚠️ Thành viên không hợp lệ! Vui lòng tag đúng người hoặc nhập đúng ID Discord.", ephemeral=True)
+        return
+    
+    receiver_id = int(clean_id_str)
+
     if amount <= 0:
         await interaction.response.send_message("⚠️ Số lượng ensure cần phát phải lớn hơn 0!", ephemeral=True)
         return
 
-    data = load_data()
-    new_bal = update_balance(data, member.id, amount)
+    receiver_member = interaction.guild.get_member(receiver_id)
+    receiver_name = receiver_member.display_name if receiver_member else f"User {receiver_id}"
 
-    await interaction.response.send_message(f"🎁 **PHÁT THƯỞNG!** {interaction.user.mention} đã cấp thêm **{amount:,} chai ensure** cho {member.mention}! *(Kho của mục tiêu hiện có: {new_bal:,} chai)*")
+    data = load_data()
+    new_bal = update_balance(data, receiver_id, amount)
+
+    await interaction.response.send_message(f"🎁 **PHÁT THƯỞNG!** {interaction.user.mention} đã cấp thêm **{amount:,} chai ensure** cho **{receiver_name}**! *(Kho hiện có: {new_bal:,} chai)*")
 
 
 # 13. Lệnh /forgive (Gỡ lệnh cấm /duel cho thành viên - Chỉ Admin)
 @bot.tree.command(name="forgive", description="Tha lỗi, gỡ lệnh cấm chơi /duel cho thành viên (Chỉ Admin)")
-@app_commands.describe(member="Thành viên cần được gỡ cấm duel")
-async def slash_forgive(interaction: discord.Interaction, member: discord.Member):
+@app_commands.describe(target="Tag tên hoặc nhập ID thành viên cần gỡ cấm")
+async def slash_forgive(interaction: discord.Interaction, target: str):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này! Chỉ Quản trị viên mới có thể tha lỗi.", ephemeral=True)
         return
 
+    clean_id_str = target.replace("<@", "").replace(">", "").replace("!", "")
+    if not clean_id_str.isdigit():
+        await interaction.response.send_message("⚠️ Thành viên không hợp lệ! Vui lòng tag đúng người hoặc nhập đúng ID Discord.", ephemeral=True)
+        return
+
+    target_id = clean_id_str
     data = load_data()
-    target_id = str(member.id)
+
+    target_member = interaction.guild.get_member(int(target_id))
+    target_name = target_member.display_name if target_member else f"User {target_id}"
 
     if "disabled" in data and target_id in data["disabled"]:
         del data["disabled"][target_id]
         save_data(data)
-        await interaction.response.send_message(f"🕊️ **ĐÃ THA LỖI!** {interaction.user.mention} đã gỡ lệnh cấm chơi `/duel` cho {member.mention} thành công!")
+        await interaction.response.send_message(f"🕊️ **ĐÃ THA LỖI!** {interaction.user.mention} đã gỡ lệnh cấm chơi `/duel` cho **{target_name}** thành công!")
     else:
-        await interaction.response.send_message(f"⚠️ {member.mention} hiện tại không bị cấm chơi `/duel` nào cả!", ephemeral=True)
+        await interaction.response.send_message(f"⚠️ **{target_name}** hiện tại không bị cấm chơi `/duel` nào cả!", ephemeral=True)
 
 
 # ==================== CHẠY BOT ====================
